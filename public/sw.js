@@ -1,10 +1,16 @@
-const CACHE_NAME = "bible-vision-v1";
+const CACHE_PREFIX = "bible-vision-";
+const SHELL_CACHE = `${CACHE_PREFIX}shell-v3`;
+const RUNTIME_CACHE = `${CACHE_PREFIX}runtime-v3`;
+const BIBLE_CACHE = `${CACHE_PREFIX}bibles-v2`;
 const OFFLINE_URL = "/offline.html";
 const CORE_ASSETS = ["/", "/offline.html", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(CORE_ASSETS)).then(() => self.skipWaiting()),
+    caches.open(SHELL_CACHE).then(async (cache) => {
+      await cache.addAll(CORE_ASSETS);
+      await self.skipWaiting();
+    }),
   );
 });
 
@@ -12,36 +18,71 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches
       .keys()
-      .then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))))
+      .then((keys) =>
+        Promise.all(
+          keys
+            .filter(
+              (key) =>
+                key.startsWith(CACHE_PREFIX) &&
+                ![SHELL_CACHE, RUNTIME_CACHE, BIBLE_CACHE].includes(key),
+            )
+            .map((key) => caches.delete(key)),
+        ),
+      )
       .then(() => self.clients.claim()),
   );
 });
 
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
+  const url = new URL(event.request.url);
+  if (url.origin !== self.location.origin || url.pathname.startsWith("/api/")) return;
+
   if (event.request.mode === "navigate") {
     event.respondWith(
       fetch(event.request)
         .then((response) => {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+          const contentType = response.headers.get("content-type") || "";
+          if (response.ok && contentType.includes("text/html")) {
+            const copy = response.clone();
+            event.waitUntil(
+              caches.open(RUNTIME_CACHE).then((cache) => cache.put(event.request, copy)),
+            );
+          }
           return response;
         })
         .catch(async () => (await caches.match(event.request)) || caches.match(OFFLINE_URL)),
     );
     return;
   }
+
+  if (url.pathname.startsWith("/bibles/")) {
+    event.respondWith(
+      caches.open(BIBLE_CACHE).then(async (cache) => {
+        const cached = await cache.match(event.request);
+        if (cached) return cached;
+        const response = await fetch(event.request);
+        if (response.ok) await cache.put(event.request, response.clone());
+        return response;
+      }),
+    );
+    return;
+  }
+
   event.respondWith(
-    caches.match(event.request).then(
-      (cached) =>
-        cached ||
-        fetch(event.request).then((response) => {
-          if (response.ok && event.request.url.startsWith(self.location.origin)) {
-            const copy = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
-          }
+    caches.open(RUNTIME_CACHE).then(async (cache) => {
+      const cached = await cache.match(event.request);
+      const network = fetch(event.request)
+        .then(async (response) => {
+          if (response.ok) await cache.put(event.request, response.clone());
           return response;
-        }),
-    ),
+        })
+        .catch(() => cached || Response.error());
+      if (cached) {
+        event.waitUntil(network);
+        return cached;
+      }
+      return network;
+    }),
   );
 });

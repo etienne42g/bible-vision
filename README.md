@@ -1,100 +1,44 @@
-# vinext-starter
+# Bible Vision
 
-A clean full-stack starter running on
-[vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and
-Drizzle support.
+Bible Vision est une PWA française de lecture, d’étude et d’annotation biblique,
+préparée pour transmettre des passages vers
+[Ancre](https://memoryverses.etiennegrz.fr).
 
-## Prerequisites
+## Fonctionnalités
 
-- Node.js `>=22.13.0`
+- corpus complets Louis Segond 1910 et J.N. Darby, intégrés pour le hors-ligne ;
+- navigation dans les 66 livres et recherche textuelle ou par référence ;
+- sélection multiple, plages de versets, surlignages et notes ;
+- comparaison des traductions et concordance Strong de base ;
+- favoris, historique, bibliothèque et sauvegarde locale ;
+- préparation de prédications avec export texte, Markdown et impression/PDF ;
+- file locale d’import vers Ancre avec identifiants idempotents ;
+- PWA installable, thèmes clair/sépia/sombre et contraste renforcé.
 
-## Quick Start
+Les données personnelles sont conservées dans IndexedDB sur l’appareil. La
+synchronisation multi-appareils nécessite le raccordement au projet Supabase
+d’Ancre.
+
+## Développement
+
+Node.js `>=22.13.0` est requis.
 
 ```bash
 npm install
 npm run dev
-npm run build
+npm run lint
+npm run typecheck
+npm test
 ```
 
-This starter does not use `wrangler.jsonc`.
+`npm run data:refresh` régénère les corpus embarqués à partir des exports JSON
+HelloAO, dont les métadonnées renvoient vers les licences des traductions.
 
-## Included Shape
+## Traductions et licences
 
-- edit site code under `app/`
-- `.openai/hosting.json` declares optional Sites D1 and R2 bindings
-- `vite.config.ts` simulates declared bindings for local development
-- `db/schema.ts` starts intentionally empty
-- `examples/d1/` contains an optional D1 example surface
-- `drizzle.config.ts` supports local migration generation when needed
+- Louis Segond 1910 : domaine public, source eBible.org.
+- Bible J.N. Darby, révision JND v2.0 : domaine public, source Bibles et
+  Publications Chrétiennes via eBible.org.
 
-## Workspace Auth Headers
-
-Signed-in visitors receive both `oai-authenticated-user-id` and `oai-authenticated-user-email`. Private Sites require every visitor to sign in; public Sites may also have anonymous visitors, for whom neither header is present.
-
-The user ID is stable for the same user on the same Site and different across Sites. Email and name are intended for display or contact purposes.
-
-SIWC-authenticated workspace sites may also receive
-`oai-authenticated-user-full-name` when the user's SIWC profile has a non-empty
-`name` claim. The full-name value is percent-encoded UTF-8 and is accompanied by
-`oai-authenticated-user-full-name-encoding: percent-encoded-utf-8`.
-
-Treat the full name as optional and fall back to email when it is absent:
-
-```tsx
-import { headers } from "next/headers";
-
-export default async function Home() {
-  const requestHeaders = await headers();
-  const userId = requestHeaders.get("oai-authenticated-user-id");
-  const email = requestHeaders.get("oai-authenticated-user-email");
-  const encodedFullName = requestHeaders.get("oai-authenticated-user-full-name");
-  const fullName =
-    encodedFullName &&
-    requestHeaders.get("oai-authenticated-user-full-name-encoding") ===
-      "percent-encoded-utf-8"
-      ? decodeURIComponent(encodedFullName)
-      : null;
-
-  const displayName = fullName ?? email;
-  // ...
-}
-```
-
-## Optional Dispatch-Owned ChatGPT Sign-In
-
-Import the ready-to-use helpers from `app/chatgpt-auth.ts` when the site needs
-optional or required ChatGPT sign-in:
-
-- Use `getChatGPTUser()` for optional signed-in UI.
-- Use `requireChatGPTUser(returnTo)` for server-rendered pages that should send
-  anonymous visitors through Sign in with ChatGPT.
-- Use `chatGPTSignInPath(returnTo)` and `chatGPTSignOutPath(returnTo)` for
-  browser links or actions.
-- Pass a same-origin relative `returnTo` path for the destination after sign-in
-  or sign-out. The helper validates and safely encodes it.
-- Mark protected pages with `export const dynamic = "force-dynamic"` because
-  they depend on per-request identity headers.
-
-Dispatch owns `/signin-with-chatgpt`, `/signout-with-chatgpt`, `/callback`, the
-OAuth cookies, and identity header injection. Do not implement app routes for
-those reserved paths. Routes that do not import and call the helper remain
-anonymous-compatible.
-
-SIWC establishes identity only; it does not prove workspace membership. Use the
-Sites hosting platform's access policy controls for workspace-wide restrictions,
-or enforce explicit server-side membership or allowlist checks.
-
-Use SIWC for account pages, user-specific dashboards, saved records, and write
-actions tied to the current ChatGPT user. Leave public content anonymous.
-
-## Useful Commands
-
-- `npm run dev`: start local development
-- `npm run build`: verify the vinext build output
-- `npm test`: build the starter and verify its rendered loading skeleton
-- `npm run db:generate`: generate Drizzle migrations after schema changes
-
-## Learn More
-
-- [vinext Documentation](https://github.com/cloudflare/vinext)
-- [Drizzle D1 Guide](https://orm.drizzle.team/docs/get-started/d1-new)
+Les sources et empreintes SHA-256 sont incluses dans
+`public/bibles/catalog.json`.

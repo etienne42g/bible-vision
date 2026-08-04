@@ -33,9 +33,9 @@ test("server-renders the Bible Vision application shell", async () => {
   assert.match(html, /<title>Bible Vision — Lire, étudier, mémoriser<\/title>/i);
   assert.match(html, /Bible Vision/);
   assert.match(html, /Jean/);
-  assert.match(html, /Envoyer vers Ancre/);
+  assert.match(html, /Mémoriser avec Ancre/);
   assert.match(html, /manifest\.webmanifest/);
-  assert.match(html, /og\.png/);
+  assert.match(html, /og-v2\.png/);
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape/i);
 });
 
@@ -51,17 +51,20 @@ test("ships the installable PWA assets and removes the starter preview", async (
   assert.equal(manifest.short_name, "Bible Vision");
   assert.equal(manifest.display, "standalone");
   assert.equal(manifest.icons.length, 2);
-  assert.match(serviceWorker, /bible-vision-v1/);
+  assert.match(serviceWorker, /bible-vision-/);
   assert.match(serviceWorker, /offline\.html/);
-  assert.match(page, /localStorage/);
+  assert.match(page, /loadLocalState/);
   assert.match(page, /serviceWorker\.register/);
   assert.match(page, /memoryverses\.etiennegrz\.fr/);
+  assert.match(page, /role="dialog"/);
+  assert.match(page, /aria-live="polite"/);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
 
   await Promise.all([
     access(new URL("../public/icon-192.png", import.meta.url)),
     access(new URL("../public/icon-512.png", import.meta.url)),
     access(new URL("../public/og.png", import.meta.url)),
+    access(new URL("../public/og-v2.png", import.meta.url)),
   ]);
   await assert.rejects(access(new URL("../app/_sites-preview", import.meta.url)));
 });

@@ -19,6 +19,34 @@ interface ExecutionContext {
   passThroughOnException(): void;
 }
 
+const webManifest = {
+  name: "Bible Vision — Lire, étudier, mémoriser",
+  short_name: "Bible Vision",
+  description: "Une Bible d’étude personnelle connectée à Ancre.",
+  lang: "fr",
+  start_url: "/",
+  scope: "/",
+  display: "standalone",
+  orientation: "any",
+  background_color: "#f7f3ea",
+  theme_color: "#254f43",
+  categories: ["books", "education", "lifestyle"],
+  icons: [
+    {
+      src: "/icon-192.png",
+      sizes: "192x192",
+      type: "image/png",
+      purpose: "any maskable",
+    },
+    {
+      src: "/icon-512.png",
+      sizes: "512x512",
+      type: "image/png",
+      purpose: "any maskable",
+    },
+  ],
+};
+
 // Image security config. SVG sources with .svg extension auto-skip the
 // optimization endpoint on the client side (served directly, no proxy).
 // To route SVGs through the optimizer (with security headers), set
@@ -28,6 +56,15 @@ interface ExecutionContext {
 const worker = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+
+    if (url.pathname === "/manifest.webmanifest") {
+      return new Response(JSON.stringify(webManifest), {
+        headers: {
+          "content-type": "application/manifest+json; charset=utf-8",
+          "cache-control": "public, max-age=3600",
+        },
+      });
+    }
 
     if (url.pathname === "/_vinext/image") {
       const allowedWidths = [...DEFAULT_DEVICE_SIZES, ...DEFAULT_IMAGE_SIZES];

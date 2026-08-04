@@ -40,13 +40,20 @@ export async function generateMetadata(): Promise<Metadata> {
       description: "Lisez, annotez, étudiez et mémorisez les Écritures dans une expérience sereine.",
       type: "website",
       locale: "fr_FR",
-      images: [{ url: `${origin}/og.png`, width: 1200, height: 630, alt: "Bible Vision" }],
+      images: [
+        {
+          url: `${origin}/og-v2.png`,
+          width: 1731,
+          height: 909,
+          alt: "Bible Vision — Lire, étudier et mémoriser",
+        },
+      ],
     },
     twitter: {
       card: "summary_large_image",
       title: "Bible Vision",
       description: "Lire, étudier et mémoriser les Écritures.",
-      images: [`${origin}/og.png`],
+      images: [`${origin}/og-v2.png`],
     },
   };
 }
