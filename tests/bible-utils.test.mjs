@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
   formatReference,
@@ -7,6 +8,10 @@ import {
   parseReference,
 } from "../lib/bible.ts";
 import { withoutSentImport } from "../lib/ancre.ts";
+import {
+  findStrongEntriesForSelection,
+  resolveStrongEntriesForSelection,
+} from "../lib/strong.ts";
 
 const catalog = {
   updatedAt: "",
@@ -73,4 +78,78 @@ test("removes a passage from the Ancre queue once it is sent", () => {
 
   assert.deepEqual(withoutSentImport(imports, "first"), [imports[1]]);
   assert.deepEqual(withoutSentImport(imports, "missing"), imports);
+});
+
+test("finds deduplicated Strong entries for selected verses", () => {
+  assert.deepEqual(
+    findStrongEntriesForSelection("PSA", 23, [1, 6]).map((entry) => entry.id),
+    ["H7462", "H2617"],
+  );
+  assert.deepEqual(
+    findStrongEntriesForSelection("JHN", 3, [16, 16]).map((entry) => entry.id),
+    ["G25"],
+  );
+  assert.deepEqual(findStrongEntriesForSelection("GEN", 1, [1]), []);
+});
+
+test("resolves and merges aligned Strong words across selected verses", () => {
+  const book = {
+    code: "JHN",
+    chapters: {
+      3: {
+        16: [
+          ["G2316", ["Dieu"]],
+          ["G25", ["aimé"]],
+        ],
+        17: [
+          ["G2316", ["Dieu"]],
+          ["G649", ["envoyé"]],
+        ],
+      },
+    },
+  };
+  const lexicon = {
+    G2316: ["θεός", "theos", "G:N", "God"],
+    G25: ["ἀγαπάω", "agapaō", "G:V", "to love"],
+    G649: ["ἀποστέλλω", "apostellō", "G:V", "to send"],
+  };
+
+  const entries = resolveStrongEntriesForSelection(
+    book,
+    lexicon,
+    3,
+    [17, 16, 16],
+  );
+
+  assert.deepEqual(
+    entries.map((entry) => entry.id),
+    ["G2316", "G25", "G649"],
+  );
+  assert.equal(entries[0].translations, "Dieu");
+  assert.equal(entries[0].occurrences, "JHN 3:16, 17");
+  assert.equal(entries[1].kind, "verbe grec");
+  assert.equal(entries[1].definitionLanguage, "en");
+});
+
+test("ships verified Strong references for key Greek and Hebrew passages", async () => {
+  const [catalogRaw, johnRaw, psalmsRaw] = await Promise.all([
+    readFile(new URL("../public/strong/catalog.json", import.meta.url), "utf8"),
+    readFile(new URL("../public/strong/lsg/JHN.json", import.meta.url), "utf8"),
+    readFile(new URL("../public/strong/lsg/PSA.json", import.meta.url), "utf8"),
+  ]);
+  const strongCatalog = JSON.parse(catalogRaw);
+  const john = JSON.parse(johnRaw);
+  const psalms = JSON.parse(psalmsRaw);
+
+  assert.equal(strongCatalog.books.length, 66);
+  assert.ok(
+    john.chapters["3"]["16"].some(
+      ([id, forms]) => id === "G25" && forms.includes("ἠγάπησεν"),
+    ),
+  );
+  assert.ok(
+    psalms.chapters["23"]["1"].some(
+      ([id, forms]) => id === "H7462" && forms.some((form) => form.includes("רֹ")),
+    ),
+  );
 });

@@ -13,9 +13,11 @@
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
-    "data:refresh": "node scripts/import-bibles.mjs"
+    "data:refresh": "node scripts/import-bibles.mjs && node scripts/import-strong.mjs",
+    "data:strong": "node scripts/import-strong.mjs"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.112.0",
     "drizzle-orm": "0.45.2",
     "lucide-react": "^0.468.0",
     "next": "^16.3.0",

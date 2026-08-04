@@ -21,6 +21,7 @@ import {
   Heart,
   Highlighter,
   Library,
+  Languages,
   Maximize2,
   Menu,
   MessageSquareText,
@@ -63,9 +64,18 @@ import {
   saveLocalState,
 } from "../lib/local-store";
 import { withoutSentImport } from "../lib/ancre";
+import { supabase } from "../lib/supabase";
+import {
+  loadStrongBook,
+  loadStrongLexicon,
+  resolveStrongEntriesForSelection,
+  strongEntries,
+  type StrongEntry,
+} from "../lib/strong";
 import {
   type ChangeEvent,
   type CSSProperties,
+  type FormEvent,
   type KeyboardEvent,
   type MouseEvent,
   type ReactNode,
@@ -75,6 +85,7 @@ import {
   useRef,
   useState,
 } from "react";
+import type { User } from "@supabase/supabase-js";
 
 type View =
   | "read"
@@ -179,15 +190,6 @@ type InstallPromptEvent = Event & {
   userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
 };
 
-type StrongEntry = {
-  id: string;
-  original: string;
-  transliteration: string;
-  kind: string;
-  definition: string;
-  occurrences: string;
-};
-
 const highlightColors = [
   { key: "yellow", color: "#f7d878", label: "Promesse" },
   { key: "green", color: "#a9d5b5", label: "Encouragement" },
@@ -195,45 +197,6 @@ const highlightColors = [
   { key: "red", color: "#e8a29a", label: "Avertissement" },
   { key: "purple", color: "#c5add6", label: "Prière" },
   { key: "orange", color: "#efb77c", label: "À approfondir" },
-];
-
-const strongEntries: StrongEntry[] = [
-  {
-    id: "G25",
-    original: "ἀγαπάω",
-    transliteration: "agapaō",
-    kind: "verbe grec",
-    definition:
-      "Aimer, accueillir avec affection et rechercher activement le bien d’une personne.",
-    occurrences: "Jean 3:16 · Jean 13:34 · Romains 8:37",
-  },
-  {
-    id: "G26",
-    original: "ἀγάπη",
-    transliteration: "agapē",
-    kind: "nom grec",
-    definition:
-      "Amour qui se donne, bienveillance et attachement exprimés en actes.",
-    occurrences: "1 Corinthiens 13 · 1 Jean 4:8",
-  },
-  {
-    id: "H7462",
-    original: "רָעָה",
-    transliteration: "rāʿâ",
-    kind: "verbe hébreu",
-    definition:
-      "Faire paître, conduire et prendre soin d’un troupeau ; par extension, accompagner.",
-    occurrences: "Psaume 23:1 · Ézéchiel 34:15",
-  },
-  {
-    id: "H2617",
-    original: "חֶסֶד",
-    transliteration: "ḥesed",
-    kind: "nom hébreu",
-    definition:
-      "Bonté fidèle, grâce et loyauté durable au sein d’une alliance.",
-    occurrences: "Psaume 23:6 · Psaume 136",
-  },
 ];
 
 const fallbackCatalog: BibleCatalog = {
@@ -404,6 +367,13 @@ export default function HomePage() {
   const [online, setOnline] = useState(() =>
     typeof navigator === "undefined" ? true : navigator.onLine,
   );
+  const [accountUser, setAccountUser] = useState<User | null>(null);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [accountEmail, setAccountEmail] = useState("");
+  const [accountOtp, setAccountOtp] = useState("");
+  const [accountOtpSent, setAccountOtpSent] = useState(false);
+  const [accountWorking, setAccountWorking] = useState(false);
+  const [accountError, setAccountError] = useState("");
   const [referenceInput, setReferenceInput] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [searchScope, setSearchScope] = useState<SearchScope>("all");
@@ -422,6 +392,11 @@ export default function HomePage() {
   const [toast, setToast] = useState("");
   const [strongOpen, setStrongOpen] = useState(false);
   const [strongSelected, setStrongSelected] = useState<StrongEntry>(strongEntries[0]);
+  const [strongContextReference, setStrongContextReference] = useState("");
+  const [strongContextText, setStrongContextText] = useState("");
+  const [strongContextEntries, setStrongContextEntries] = useState<StrongEntry[]>([]);
+  const [strongLoading, setStrongLoading] = useState(false);
+  const [strongError, setStrongError] = useState("");
   const [strongQuery, setStrongQuery] = useState("");
   const [hydrated, setHydrated] = useState(false);
   const [offlineDownloading, setOfflineDownloading] = useState(false);
@@ -441,6 +416,7 @@ export default function HomePage() {
   );
   const quickSearchRef = useRef<HTMLInputElement>(null);
   const backupInputRef = useRef<HTMLInputElement>(null);
+  const strongRequestIdRef = useRef(0);
 
   const book = useMemo(
     () => catalog.books.find((item) => item.code === bookCode) ?? catalog.books[0],
@@ -475,7 +451,7 @@ export default function HomePage() {
   const totalSermonMinutes =
     activeSermon?.sections.reduce((total, section) => total + section.minutes, 0) ??
     0;
-  const modalActive = noteOpen || ancreOpen || strongOpen;
+  const modalActive = noteOpen || ancreOpen || strongOpen || accountOpen;
 
   useEffect(() => {
     let cancelled = false;
@@ -498,6 +474,22 @@ export default function HomePage() {
       });
     return () => {
       cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    void supabase.auth.getSession().then(({ data }) => {
+      if (active) setAccountUser(data.session?.user ?? null);
+    });
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (active) setAccountUser(session?.user ?? null);
+    });
+    return () => {
+      active = false;
+      subscription.unsubscribe();
     };
   }, []);
 
@@ -667,6 +659,7 @@ export default function HomePage() {
         setNoteOpen(false);
         setAncreOpen(false);
         setStrongOpen(false);
+        setAccountOpen(false);
         setHighlightOpen(false);
         setMobileMenu(false);
       }
@@ -912,6 +905,23 @@ export default function HomePage() {
     setToast(`${item.passage.reference} envoyé à Ancre`);
   }
 
+  function openAncreImport(item: AncreImport) {
+    if (!online) {
+      setToast("Passage conservé : reconnectez-vous avant de l’envoyer à Ancre.");
+      return false;
+    }
+    const tab = window.open("", "_blank");
+    if (!tab) {
+      setToast(
+        "Passage conservé : autorisez l’ouverture du nouvel onglet puis réessayez.",
+      );
+      return false;
+    }
+    tab.opener = null;
+    tab.location.replace(buildAncreLink(item));
+    return true;
+  }
+
   function addToAncre(start = false) {
     if (!selected.length || !selectedText) return;
     const ranges = groupConsecutiveNumbers(selected);
@@ -972,7 +982,10 @@ export default function HomePage() {
     setAncreNote("");
     if (start) {
       const [sentItem, ...queuedItems] = newItems;
-      window.open(buildAncreLink(sentItem), "_blank", "noopener,noreferrer");
+      if (!openAncreImport(sentItem)) {
+        setImports((previous) => [...newItems, ...previous]);
+        return;
+      }
       setImports((previous) => [...queuedItems, ...previous]);
       setToast(
         queuedItems.length
@@ -1239,7 +1252,7 @@ export default function HomePage() {
     if (!needle) return strongEntries;
     return strongEntries.filter((entry) =>
       normalizeBibleText(
-        `${entry.id} ${entry.original} ${entry.transliteration} ${entry.definition}`,
+        `${entry.id} ${entry.original} ${entry.transliteration} ${entry.definition} ${entry.translations} ${entry.occurrences}`,
       ).includes(needle),
     );
   }, [strongQuery]);
@@ -1251,6 +1264,113 @@ export default function HomePage() {
     }))
     .filter((entry): entry is HistoryEntry & { book: BibleBook } => Boolean(entry.book))
     .slice(0, 4);
+
+  function openAccount() {
+    setAccountEmail(accountUser?.email ?? accountEmail);
+    setAccountOtp("");
+    setAccountOtpSent(false);
+    setAccountError("");
+    setAccountOpen(true);
+  }
+
+  async function submitAccount(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const email = accountEmail.trim().toLowerCase();
+    if (!email) return;
+    setAccountWorking(true);
+    setAccountError("");
+    try {
+      if (!accountOtpSent) {
+        const { error } = await supabase.auth.signInWithOtp({
+          email,
+          options: {
+            emailRedirectTo: `${window.location.origin}/?account=connected`,
+            shouldCreateUser: true,
+          },
+        });
+        if (error) throw error;
+        setAccountOtpSent(true);
+        setToast("Code envoyé par e-mail.");
+        return;
+      }
+      const { data, error } = await supabase.auth.verifyOtp({
+        email,
+        token: accountOtp.replace(/\s+/gu, ""),
+        type: "email",
+      });
+      if (error) throw error;
+      setAccountUser(data.user);
+      setAccountOpen(false);
+      setToast("Compte Ancre connecté à Bible Vision.");
+    } catch (error) {
+      setAccountError(
+        error instanceof Error
+          ? error.message
+          : "La connexion n’a pas pu être finalisée.",
+      );
+    } finally {
+      setAccountWorking(false);
+    }
+  }
+
+  async function disconnectAccount() {
+    setAccountWorking(true);
+    setAccountError("");
+    const { error } = await supabase.auth.signOut();
+    setAccountWorking(false);
+    if (error) {
+      setAccountError(error.message);
+      return;
+    }
+    setAccountUser(null);
+    setAccountOpen(false);
+    setToast("Compte déconnecté de Bible Vision.");
+  }
+
+  function openStrongEntry(entry: StrongEntry) {
+    strongRequestIdRef.current += 1;
+    setStrongContextReference("");
+    setStrongContextText("");
+    setStrongContextEntries([]);
+    setStrongError("");
+    setStrongLoading(false);
+    setStrongSelected(entry);
+    setStrongOpen(true);
+  }
+
+  async function openStrongForSelection() {
+    const requestId = strongRequestIdRef.current + 1;
+    strongRequestIdRef.current = requestId;
+    setStrongContextReference(selectedReference);
+    setStrongContextText(selectedText);
+    setStrongContextEntries([]);
+    setStrongError("");
+    setStrongLoading(true);
+    setStrongOpen(true);
+    try {
+      const [strongBook, lexicon] = await Promise.all([
+        loadStrongBook(bookCode),
+        loadStrongLexicon(),
+      ]);
+      if (strongRequestIdRef.current !== requestId) return;
+      const entries = resolveStrongEntriesForSelection(
+        strongBook,
+        lexicon,
+        chapter,
+        selected,
+      );
+      setStrongContextEntries(entries);
+      if (entries[0]) setStrongSelected(entries[0]);
+    } catch {
+      if (strongRequestIdRef.current === requestId) {
+        setStrongError(
+          "Les données Strong n’ont pas pu être chargées. Vérifiez la connexion puis réessayez.",
+        );
+      }
+    } finally {
+      if (strongRequestIdRef.current === requestId) setStrongLoading(false);
+    }
+  }
 
   function renderVerseText(verse: { n: number; text: string }): ReactNode {
     const match =
@@ -1269,8 +1389,7 @@ export default function HomePage() {
           className="strong-word"
           onClick={(event) => {
             event.stopPropagation();
-            setStrongSelected(match.entry);
-            setStrongOpen(true);
+            openStrongEntry(match.entry);
           }}
         >
           {verse.text.slice(originalIndex, originalIndex + match.word.length)}
@@ -1342,14 +1461,18 @@ export default function HomePage() {
           >
             <Settings size={19} strokeWidth={1.8} /> Réglages
           </button>
-          <div className="profile">
-            <div className="avatar">BV</div>
+          <button className="profile" onClick={openAccount}>
+            <div className="avatar">
+              {accountUser?.email?.slice(0, 2).toUpperCase() ?? "BV"}
+            </div>
             <div>
-              <strong>Mode local</strong>
-              <span>Données privées sur cet appareil</span>
+              <strong>{accountUser ? "Compte Ancre" : "Mode local"}</strong>
+              <span>
+                {accountUser?.email ?? "Données privées sur cet appareil"}
+              </span>
             </div>
             <ShieldCheck size={18} aria-hidden="true" />
-          </div>
+          </button>
         </div>
       </aside>
 
@@ -1408,7 +1531,7 @@ export default function HomePage() {
             <section className="reader-panel">
               <div className="reader-toolbar">
                 <div className="passage-selector">
-                  <label className="book-select">
+                  <label className="book-select select-control">
                     <select
                       value={bookCode}
                       onChange={(event) => navigateTo(event.target.value, 1)}
@@ -1423,7 +1546,7 @@ export default function HomePage() {
                     </select>
                     <ChevronDown size={16} aria-hidden="true" />
                   </label>
-                  <label className="chapter-select">
+                  <label className="chapter-select select-control">
                     <select
                       value={chapter}
                       onChange={(event) => navigateTo(bookCode, Number(event.target.value))}
@@ -1547,7 +1670,7 @@ export default function HomePage() {
                   </button>
                 </div>
                 <div className="translation-row">
-                  <label className="translation-picker">
+                  <label className="translation-picker select-control">
                     <select
                       value={translation}
                       onChange={(event) =>
@@ -1891,8 +2014,7 @@ export default function HomePage() {
                 <button
                   key={entry.id}
                   onClick={() => {
-                    setStrongSelected(entry);
-                    setStrongOpen(true);
+                    openStrongEntry(entry);
                   }}
                 >
                   <span>{entry.id}</span>
@@ -1975,9 +2097,9 @@ export default function HomePage() {
               <article>
                 <span>Compte Ancre</span>
                 <strong>
-                  <i>À connecter</i>
+                  <i>{accountUser ? "Connecté" : "À connecter"}</i>
                 </strong>
-                <small>ouverture sécurisée dans Ancre</small>
+                <small>{accountUser?.email ?? "même compte pour les deux apps"}</small>
               </article>
             </div>
             <section className="review-card">
@@ -2041,15 +2163,14 @@ export default function HomePage() {
                     >
                       {item.status === "pending" ? "en attente" : "prêt"}
                     </span>
-                    <a
-                      href={buildAncreLink(item)}
-                      target="_blank"
-                      rel="noreferrer"
+                    <button
                       aria-label={`Ouvrir ${item.passage.reference} dans Ancre`}
-                      onClick={() => markImportSent(item)}
+                      onClick={() => {
+                        if (openAncreImport(item)) markImportSent(item);
+                      }}
                     >
                       <ExternalLink size={16} />
-                    </a>
+                    </button>
                     <button
                       onClick={() =>
                         setImports((previous) =>
@@ -2092,17 +2213,20 @@ export default function HomePage() {
               </div>
             </div>
             <div className="sermon-project-bar">
-              <select
-                value={activeSermonId}
-                onChange={(event) => setActiveSermonId(event.target.value)}
-                aria-label="Choisir une prédication"
-              >
-                {sermons.map((sermon) => (
-                  <option key={sermon.id} value={sermon.id}>
-                    {sermon.title}
-                  </option>
-                ))}
-              </select>
+              <div className="select-control select-control-project">
+                <select
+                  value={activeSermonId}
+                  onChange={(event) => setActiveSermonId(event.target.value)}
+                  aria-label="Choisir une prédication"
+                >
+                  {sermons.map((sermon) => (
+                    <option key={sermon.id} value={sermon.id}>
+                      {sermon.title}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown size={16} aria-hidden="true" />
+              </div>
               <button
                 onClick={() => {
                   const project: SermonProject = {
@@ -2157,20 +2281,23 @@ export default function HomePage() {
                   </label>
                   <label>
                     STATUT
-                    <select
-                      value={activeSermon.status}
-                      onChange={(event) =>
-                        updateSermon({
-                          status: event.target.value as SermonProject["status"],
-                        })
-                      }
-                    >
-                      <option>idée</option>
-                      <option>recherche</option>
-                      <option>brouillon</option>
-                      <option>prêt</option>
-                      <option>archivé</option>
-                    </select>
+                    <span className="select-control select-control-field">
+                      <select
+                        value={activeSermon.status}
+                        onChange={(event) =>
+                          updateSermon({
+                            status: event.target.value as SermonProject["status"],
+                          })
+                        }
+                      >
+                        <option>idée</option>
+                        <option>recherche</option>
+                        <option>brouillon</option>
+                        <option>prêt</option>
+                        <option>archivé</option>
+                      </select>
+                      <ChevronDown size={15} aria-hidden="true" />
+                    </span>
                   </label>
                 </div>
                 <label>
@@ -2456,17 +2583,16 @@ export default function HomePage() {
                     <div className="library-detail-icon">
                       <Anchor size={17} />
                     </div>
-                    <a
+                    <button
                       className="library-detail-main"
-                      href={buildAncreLink(item)}
-                      target="_blank"
-                      rel="noreferrer"
-                      onClick={() => markImportSent(item)}
+                      onClick={() => {
+                        if (openAncreImport(item)) markImportSent(item);
+                      }}
                     >
                       <span>ANCRE · {item.status === "pending" ? "EN ATTENTE" : "PRÊT"}</span>
                       <strong>{item.passage.reference}</strong>
                       <p>{item.passage.text}</p>
-                    </a>
+                    </button>
                     <button
                       className="detail-delete"
                       onClick={() =>
@@ -2575,18 +2701,16 @@ export default function HomePage() {
                   <Anchor size={19} />
                 </div>
                 <div>
-                  <strong>Compte Ancre</strong>
+                  <strong>Compte Bible Vision & Ancre</strong>
                   <p>
-                    L’authentification et la synchronisation se finalisent dans Ancre.
+                    {accountUser
+                      ? `Connecté avec ${accountUser.email}. Vos données Bible restent locales.`
+                      : "Utilisez la même adresse e-mail et le même compte dans les deux applications."}
                   </p>
                 </div>
-                <a
-                  href="https://memoryverses.etiennegrz.fr"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Connecter <ExternalLink size={13} />
-                </a>
+                <button className="settings-link-button" onClick={openAccount}>
+                  {accountUser ? "Gérer" : "Connecter"}
+                </button>
               </article>
               <article>
                 <div className="settings-icon">
@@ -2762,6 +2886,14 @@ export default function HomePage() {
               <span>Commenter</span>
             </button>
             <button
+              onClick={openStrongForSelection}
+              aria-label={`Consulter Strong pour ${selectedReference}`}
+              aria-haspopup="dialog"
+            >
+              <Languages size={18} />
+              <span>Strong</span>
+            </button>
+            <button
               onClick={() => setAncreOpen(true)}
               className="ancre-action"
               aria-label="Envoyer la sélection vers Ancre"
@@ -2892,18 +3024,21 @@ export default function HomePage() {
               </label>
               <label>
                 DIFFICULTÉ
-                <select
-                  value={ancreDifficulty}
-                  onChange={(event) =>
-                    setAncreDifficulty(
-                      event.target.value as AncreImport["difficulty"],
-                    )
-                  }
-                >
-                  <option value="easy">Facile</option>
-                  <option value="medium">Intermédiaire</option>
-                  <option value="hard">Difficile</option>
-                </select>
+                <span className="select-control select-control-field">
+                  <select
+                    value={ancreDifficulty}
+                    onChange={(event) =>
+                      setAncreDifficulty(
+                        event.target.value as AncreImport["difficulty"],
+                      )
+                    }
+                  >
+                    <option value="easy">Facile</option>
+                    <option value="medium">Intermédiaire</option>
+                    <option value="hard">Difficile</option>
+                  </select>
+                  <ChevronDown size={15} aria-hidden="true" />
+                </span>
               </label>
               <label className="full">
                 THÈME
@@ -2938,6 +3073,144 @@ export default function HomePage() {
         </div>
       )}
 
+      {accountOpen && (
+        <div className="modal-backdrop" onMouseDown={() => setAccountOpen(false)}>
+          <section
+            className="modal account-modal"
+            role="dialog"
+            tabIndex={-1}
+            aria-modal="true"
+            aria-labelledby="account-dialog-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <button
+              className="modal-close"
+              onClick={() => setAccountOpen(false)}
+              aria-label="Fermer la gestion du compte"
+            >
+              <X size={19} />
+            </button>
+            <span className="modal-kicker">UN COMPTE · DEUX APPLICATIONS</span>
+            <div className="account-heading">
+              <div>
+                <ShieldCheck size={24} />
+              </div>
+              <div>
+                <h2 id="account-dialog-title">
+                  {accountUser ? "Compte connecté" : "Bible Vision & Ancre"}
+                </h2>
+                <p>
+                  {accountUser
+                    ? "La même identité Supabase est utilisée dans les deux applications."
+                    : "Saisissez l’adresse e-mail utilisée dans Ancre. Aucun mot de passe n’est nécessaire."}
+                </p>
+              </div>
+            </div>
+
+            {accountUser ? (
+              <>
+                <div className="account-connected">
+                  <span>CONNECTÉ AVEC</span>
+                  <strong>{accountUser.email}</strong>
+                  <p>
+                    La session de chaque application reste isolée et sécurisée. Les
+                    notes et préférences Bible Vision sont encore conservées
+                    localement sur cet appareil.
+                  </p>
+                </div>
+                {accountError && (
+                  <p className="form-error" role="alert">
+                    {accountError}
+                  </p>
+                )}
+                <div className="modal-actions stacked-mobile">
+                  <button onClick={disconnectAccount} disabled={accountWorking}>
+                    Déconnecter Bible Vision
+                  </button>
+                  <a
+                    className="modal-primary-link"
+                    href="https://memoryverses.etiennegrz.fr/settings"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Ouvrir Ancre <ExternalLink size={14} />
+                  </a>
+                </div>
+              </>
+            ) : (
+              <form className="account-form" onSubmit={submitAccount}>
+                <label>
+                  Adresse e-mail
+                  <input
+                    autoFocus
+                    type="email"
+                    autoComplete="email"
+                    value={accountEmail}
+                    disabled={accountOtpSent || accountWorking}
+                    onChange={(event) => setAccountEmail(event.target.value)}
+                    placeholder="vous@exemple.fr"
+                    required
+                  />
+                </label>
+                {accountOtpSent && (
+                  <label>
+                    Code reçu par e-mail
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      value={accountOtp}
+                      onChange={(event) => setAccountOtp(event.target.value)}
+                      placeholder="123456"
+                      minLength={6}
+                      required
+                    />
+                  </label>
+                )}
+                {accountError && (
+                  <p className="form-error" role="alert">
+                    {accountError}
+                  </p>
+                )}
+                {accountOtpSent && (
+                  <p className="account-help">
+                    Le code peut mettre quelques instants à arriver. Vérifiez aussi
+                    les courriers indésirables.
+                  </p>
+                )}
+                <div className="modal-actions stacked-mobile">
+                  {accountOtpSent && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAccountOtpSent(false);
+                        setAccountOtp("");
+                        setAccountError("");
+                      }}
+                    >
+                      Changer d’adresse
+                    </button>
+                  )}
+                  <button
+                    className="primary"
+                    type="submit"
+                    disabled={
+                      accountWorking || (accountOtpSent && accountOtp.trim().length < 6)
+                    }
+                  >
+                    {accountWorking
+                      ? "Connexion…"
+                      : accountOtpSent
+                        ? "Valider le code"
+                        : "Recevoir un code"}
+                  </button>
+                </div>
+              </form>
+            )}
+          </section>
+        </div>
+      )}
+
       {strongOpen && (
         <div className="modal-backdrop" onMouseDown={() => setStrongOpen(false)}>
           <section
@@ -2956,22 +3229,107 @@ export default function HomePage() {
               <X size={19} />
             </button>
             <span className="modal-kicker">
-              CONCORDANCE STRONG · {strongSelected.id}
+              CONCORDANCE STRONG ·{" "}
+              {strongContextReference || strongSelected.id}
             </span>
-            <div className="greek">{strongSelected.original}</div>
-            <h2 id="strong-dialog-title">{strongSelected.transliteration}</h2>
-            <p className="pronunciation">{strongSelected.kind}</p>
-            <div className="definition">
-              <span>DÉFINITION</span>
-              <p>{strongSelected.definition}</p>
-            </div>
-            <div className="strong-occurrences">
-              <span>PASSAGES ASSOCIÉS</span>
-              <p>{strongSelected.occurrences}</p>
-            </div>
+            <h2 className="sr-only" id="strong-dialog-title">
+              {strongContextReference
+                ? `Concordance Strong pour ${strongContextReference}`
+                : `Fiche Strong ${strongSelected.id}`}
+            </h2>
+            {strongContextReference && (
+              <div className="strong-context">
+                <span>PASSAGE SÉLECTIONNÉ</span>
+                <strong>{strongContextReference}</strong>
+                <p>{strongContextText}</p>
+              </div>
+            )}
+            {strongContextReference && strongLoading && (
+              <div className="strong-loading" role="status">
+                <Languages size={25} />
+                <span>Chargement des mots Strong…</span>
+              </div>
+            )}
+            {strongContextReference && !strongLoading && strongError && (
+              <div className="strong-empty">
+                <Languages size={26} />
+                <h2>Données temporairement indisponibles</h2>
+                <p>{strongError}</p>
+                <button className="wide-secondary" onClick={openStrongForSelection}>
+                  Réessayer
+                </button>
+              </div>
+            )}
+            {strongContextReference && strongContextEntries.length > 1 && (
+              <div className="strong-context-options" aria-label="Entrées Strong liées">
+                {strongContextEntries.map((entry) => (
+                  <button
+                    key={entry.id}
+                    className={entry.id === strongSelected.id ? "active" : ""}
+                    onClick={() => setStrongSelected(entry)}
+                  >
+                    <strong>{entry.id}</strong>
+                    <span>{entry.translations}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {(!strongContextReference ||
+              (!strongLoading &&
+                !strongError &&
+                strongContextEntries.length > 0)) && (
+              <>
+                <div className="greek">{strongSelected.original || strongSelected.id}</div>
+                <h2>
+                  {strongSelected.transliteration || strongSelected.id}
+                </h2>
+                <p className="pronunciation">
+                  {strongSelected.kind} · {strongSelected.id}
+                </p>
+                <div className="definition">
+                  <span>
+                    {strongSelected.definitionLanguage === "en"
+                      ? "GLOSE LEXICALE (ANGLAIS)"
+                      : "DÉFINITION"}
+                  </span>
+                  <p>{strongSelected.definition}</p>
+                </div>
+                <div className="strong-occurrences">
+                  <span>
+                    {strongContextReference
+                      ? "FORMES DANS LE TEXTE ORIGINAL"
+                      : "TRADUCTIONS"}
+                  </span>
+                  <p>{strongSelected.translations}</p>
+                </div>
+                {strongSelected.occurrences && (
+                  <div className="strong-occurrences">
+                    <span>
+                      {strongContextReference
+                        ? "DANS LA SÉLECTION"
+                        : "PASSAGES ASSOCIÉS"}
+                    </span>
+                    <p>{strongSelected.occurrences}</p>
+                  </div>
+                )}
+              </>
+            )}
+            {strongContextReference &&
+              !strongLoading &&
+              !strongError &&
+              strongContextEntries.length === 0 && (
+              <div className="strong-empty">
+                <Languages size={26} />
+                <h2>Aucun mot Strong trouvé</h2>
+                <p>
+                  Les textes originaux balisés ne fournissent pas d’entrée Strong
+                  pour cette sélection.
+                </p>
+              </div>
+            )}
             <small className="source-note">
-              Concordance de base · définitions synthétiques · vérifiez le contexte du
-              texte original.
+              Texte grec/hébreu et lexiques STEP Bible / Tyndale House — CC BY
+              4.0 · NT principal NA28, avec repli traditionnel si absent.
             </small>
           </section>
         </div>

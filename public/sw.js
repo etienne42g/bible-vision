@@ -2,6 +2,7 @@ const CACHE_PREFIX = "bible-vision-";
 const SHELL_CACHE = `${CACHE_PREFIX}shell-v3`;
 const RUNTIME_CACHE = `${CACHE_PREFIX}runtime-v3`;
 const BIBLE_CACHE = `${CACHE_PREFIX}bibles-v2`;
+const STRONG_CACHE = `${CACHE_PREFIX}strong-v1`;
 const OFFLINE_URL = "/offline.html";
 const CORE_ASSETS = ["/", "/offline.html", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
@@ -24,7 +25,7 @@ self.addEventListener("activate", (event) => {
             .filter(
               (key) =>
                 key.startsWith(CACHE_PREFIX) &&
-                ![SHELL_CACHE, RUNTIME_CACHE, BIBLE_CACHE].includes(key),
+                ![SHELL_CACHE, RUNTIME_CACHE, BIBLE_CACHE, STRONG_CACHE].includes(key),
             )
             .map((key) => caches.delete(key)),
         ),
@@ -56,15 +57,17 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  if (url.pathname.startsWith("/bibles/")) {
+  if (url.pathname.startsWith("/bibles/") || url.pathname.startsWith("/strong/")) {
     event.respondWith(
-      caches.open(BIBLE_CACHE).then(async (cache) => {
-        const cached = await cache.match(event.request);
-        if (cached) return cached;
-        const response = await fetch(event.request);
-        if (response.ok) await cache.put(event.request, response.clone());
-        return response;
-      }),
+      caches
+        .open(url.pathname.startsWith("/strong/") ? STRONG_CACHE : BIBLE_CACHE)
+        .then(async (cache) => {
+          const cached = await cache.match(event.request);
+          if (cached) return cached;
+          const response = await fetch(event.request);
+          if (response.ok) await cache.put(event.request, response.clone());
+          return response;
+        }),
     );
     return;
   }
