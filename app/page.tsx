@@ -3269,7 +3269,8 @@ export default function HomePage() {
                     onClick={() => setStrongSelected(entry)}
                   >
                     <strong>{entry.id}</strong>
-                    <span>{entry.translations}</span>
+                    <span>{entry.translations || "non traduit"}</span>
+                    <small>{entry.originalForms || entry.original}</small>
                   </button>
                 ))}
               </div>
@@ -3294,14 +3295,22 @@ export default function HomePage() {
                   </span>
                   <p>{strongSelected.definition}</p>
                 </div>
-                <div className="strong-occurrences">
-                  <span>
-                    {strongContextReference
-                      ? "FORMES DANS LE TEXTE ORIGINAL"
-                      : "TRADUCTIONS"}
-                  </span>
-                  <p>{strongSelected.translations}</p>
-                </div>
+                {strongSelected.translations && (
+                  <div className="strong-occurrences">
+                    <span>
+                      {strongContextReference
+                        ? "MOT(S) FRANÇAIS DANS LA LSG"
+                        : "TRADUCTIONS"}
+                    </span>
+                    <p>{strongSelected.translations}</p>
+                  </div>
+                )}
+                {strongContextReference && strongSelected.originalForms && (
+                  <div className="strong-occurrences">
+                    <span>FORMES DANS LE TEXTE ORIGINAL</span>
+                    <p>{strongSelected.originalForms}</p>
+                  </div>
+                )}
                 {strongSelected.occurrences && (
                   <div className="strong-occurrences">
                     <span>
@@ -3328,8 +3337,9 @@ export default function HomePage() {
               </div>
             )}
             <small className="source-note">
-              Texte grec/hébreu et lexiques STEP Bible / Tyndale House — CC BY
-              4.0 · NT principal NA28, avec repli traditionnel si absent.
+              Numéros Strong affectés en 2026 par « Concordances et Traductions
+              de la Bible » (concordance.bible). Texte grec/hébreu et lexiques :
+              STEP Bible / Tyndale House — CC BY 4.0.
             </small>
           </section>
         </div>

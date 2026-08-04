@@ -42,6 +42,9 @@ embarquées. `npm run data:strong` ne rafraîchit que les données Strong.
   Publications Chrétiennes via eBible.org.
 - Textes grec et hébreu balisés et lexiques Strong : STEP Bible / Tyndale
   House, Cambridge, sous licence CC BY 4.0.
+- Mots français alignés avec les Strong : Segond 1910, domaine public.
+  Numéros Strong affectés en 2026 par « Concordances et Traductions de la
+  Bible » (concordance.bible).
 
 Les sources et empreintes SHA-256 sont incluses dans
 `public/bibles/catalog.json`. Les sources et l’attribution Strong figurent dans

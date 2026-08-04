@@ -7,6 +7,7 @@ export type StrongReference = {
 export type StrongEntry = {
   id: string;
   original: string;
+  originalForms?: string;
   transliteration: string;
   kind: string;
   definition: string;
@@ -16,7 +17,11 @@ export type StrongEntry = {
   references: StrongReference[];
 };
 
-export type StrongVerseGroup = [id: string, words: string[]];
+export type StrongVerseGroup = [
+  id: string,
+  originalForms: string[],
+  frenchWords?: string[],
+];
 
 export type StrongBookData = {
   code: string;
@@ -174,14 +179,25 @@ export function resolveStrongEntriesForSelection(
 ) {
   const groups = new Map<
     string,
-    { words: Set<string>; verses: Set<number> }
+    {
+      originalForms: Set<string>;
+      frenchWords: Set<string>;
+      verses: Set<number>;
+    }
   >();
 
   for (const verse of [...new Set(verses)].sort((a, b) => a - b)) {
-    for (const [id, words] of book.chapters[String(chapter)]?.[String(verse)] ?? []) {
+    for (const [id, originalForms, frenchWords = []] of book.chapters[
+      String(chapter)
+    ]?.[String(verse)] ?? []) {
       const group =
-        groups.get(id) ?? { words: new Set<string>(), verses: new Set<number>() };
-      words.forEach((word) => group.words.add(word));
+        groups.get(id) ?? {
+          originalForms: new Set<string>(),
+          frenchWords: new Set<string>(),
+          verses: new Set<number>(),
+        };
+      originalForms.forEach((word) => group.originalForms.add(word));
+      frenchWords.forEach((word) => group.frenchWords.add(word));
       group.verses.add(verse);
       groups.set(id, group);
     }
@@ -194,12 +210,12 @@ export function resolveStrongEntriesForSelection(
     return {
       id,
       original,
+      originalForms: [...group.originalForms].join(" · "),
       transliteration,
       kind: describeMorphology(id, morphology),
       definition: gloss || "Glose lexicale non disponible.",
       definitionLanguage: "en",
-      translations:
-        [...group.words].join(" · ") || "Aucune forme originale associée.",
+      translations: [...group.frenchWords].join(" · "),
       occurrences: `${book.code} ${chapter}:${matchedVerses.join(", ")}`,
       references: [
         { bookCode: book.code, chapter, verses: matchedVerses },

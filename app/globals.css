@@ -2091,8 +2091,8 @@ kbd {
 
 .strong-context-options button {
   display: grid;
-  gap: 2px;
-  max-width: 170px;
+  gap: 3px;
+  max-width: 190px;
   padding: 8px 10px;
   text-align: left;
   color: var(--forest-deep);
@@ -2108,8 +2108,17 @@ kbd {
 
 .strong-context-options button span {
   overflow: hidden;
+  font-size: 10px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.strong-context-options button small {
+  overflow: hidden;
+  color: var(--muted);
   font-size: 8px;
-  font-weight: 750;
+  font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2122,6 +2131,10 @@ kbd {
 
 .strong-context-options button.active strong {
   color: #f1dfb9;
+}
+
+.strong-context-options button.active small {
+  color: rgb(255 255 255 / 78%);
 }
 
 .strong-empty {

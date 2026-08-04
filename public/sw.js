@@ -2,7 +2,7 @@ const CACHE_PREFIX = "bible-vision-";
 const SHELL_CACHE = `${CACHE_PREFIX}shell-v3`;
 const RUNTIME_CACHE = `${CACHE_PREFIX}runtime-v3`;
 const BIBLE_CACHE = `${CACHE_PREFIX}bibles-v2`;
-const STRONG_CACHE = `${CACHE_PREFIX}strong-v1`;
+const STRONG_CACHE = `${CACHE_PREFIX}strong-v2`;
 const OFFLINE_URL = "/offline.html";
 const CORE_ASSETS = ["/", "/offline.html", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 

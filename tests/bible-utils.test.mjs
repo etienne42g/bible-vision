@@ -98,12 +98,12 @@ test("resolves and merges aligned Strong words across selected verses", () => {
     chapters: {
       3: {
         16: [
-          ["G2316", ["Dieu"]],
-          ["G25", ["aimé"]],
+          ["G2316", ["θεὸς"], ["Dieu"]],
+          ["G25", ["ἠγάπησεν"], ["aimé"]],
         ],
         17: [
-          ["G2316", ["Dieu"]],
-          ["G649", ["envoyé"]],
+          ["G2316", ["θεὸς"], ["Dieu"]],
+          ["G649", ["ἀπέστειλεν"], ["envoyé"]],
         ],
       },
     },
@@ -126,30 +126,77 @@ test("resolves and merges aligned Strong words across selected verses", () => {
     ["G2316", "G25", "G649"],
   );
   assert.equal(entries[0].translations, "Dieu");
+  assert.equal(entries[0].originalForms, "θεὸς");
   assert.equal(entries[0].occurrences, "JHN 3:16, 17");
   assert.equal(entries[1].kind, "verbe grec");
   assert.equal(entries[1].definitionLanguage, "en");
 });
 
 test("ships verified Strong references for key Greek and Hebrew passages", async () => {
-  const [catalogRaw, johnRaw, psalmsRaw] = await Promise.all([
+  const [
+    catalogRaw,
+    johnRaw,
+    psalmsRaw,
+    chroniclesRaw,
+    nahumRaw,
+    ecclesiastesRaw,
+  ] = await Promise.all([
     readFile(new URL("../public/strong/catalog.json", import.meta.url), "utf8"),
     readFile(new URL("../public/strong/lsg/JHN.json", import.meta.url), "utf8"),
     readFile(new URL("../public/strong/lsg/PSA.json", import.meta.url), "utf8"),
+    readFile(new URL("../public/strong/lsg/1CH.json", import.meta.url), "utf8"),
+    readFile(new URL("../public/strong/lsg/NAM.json", import.meta.url), "utf8"),
+    readFile(new URL("../public/strong/lsg/ECC.json", import.meta.url), "utf8"),
   ]);
   const strongCatalog = JSON.parse(catalogRaw);
   const john = JSON.parse(johnRaw);
   const psalms = JSON.parse(psalmsRaw);
+  const chronicles = JSON.parse(chroniclesRaw);
+  const nahum = JSON.parse(nahumRaw);
+  const ecclesiastes = JSON.parse(ecclesiastesRaw);
 
   assert.equal(strongCatalog.books.length, 66);
   assert.ok(
     john.chapters["3"]["16"].some(
-      ([id, forms]) => id === "G25" && forms.includes("ἠγάπησεν"),
+      ([id, forms, frenchWords]) =>
+        id === "G25" &&
+        forms.includes("ἠγάπησεν") &&
+        frenchWords.includes("aimé"),
     ),
   );
   assert.ok(
     psalms.chapters["23"]["1"].some(
-      ([id, forms]) => id === "H7462" && forms.some((form) => form.includes("רֹ")),
+      ([id, forms, frenchWords]) =>
+        id === "H7462" &&
+        forms.some((form) => form.includes("רֹ")) &&
+        frenchWords.includes("berger"),
+    ),
+  );
+  assert.ok(
+    chronicles.chapters["1"]["22"].some(
+      ([id, forms, frenchWords]) =>
+        id === "H211" &&
+        forms.some((form) => form.includes("אוֹפִ")) &&
+        frenchWords.includes("Ophir"),
+    ),
+  );
+  assert.ok(
+    !chronicles.chapters["1"]["23"].some(([id]) => id === "H211"),
+  );
+  assert.ok(
+    nahum.chapters["2"]["1"].some(
+      ([id, forms, frenchWords]) =>
+        id === "H2009" &&
+        forms.some((form) => form.includes("הִנֵּ")) &&
+        frenchWords.includes("Voici"),
+    ),
+  );
+  assert.ok(
+    ecclesiastes.chapters["12"]["1"].some(
+      ([id, forms, frenchWords]) =>
+        id === "H8055" &&
+        forms.some((form) => form.includes("שְׂמַ")) &&
+        frenchWords.includes("réjouis"),
     ),
   );
 });
