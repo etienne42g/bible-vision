@@ -62,6 +62,7 @@ import {
   loadLocalState,
   saveLocalState,
 } from "../lib/local-store";
+import { withoutSentImport } from "../lib/ancre";
 import {
   type ChangeEvent,
   type CSSProperties,
@@ -906,6 +907,11 @@ export default function HomePage() {
     return `https://memoryverses.etiennegrz.fr/import#v1=${encodeBase64Url(transferable)}`;
   }
 
+  function markImportSent(item: AncreImport) {
+    setImports((previous) => withoutSentImport(previous, item.externalId));
+    setToast(`${item.passage.reference} envoyé à Ancre`);
+  }
+
   function addToAncre(start = false) {
     if (!selected.length || !selectedText) return;
     const ranges = groupConsecutiveNumbers(selected);
@@ -962,17 +968,25 @@ export default function HomePage() {
       setAncreOpen(false);
       return;
     }
-    setImports((previous) => [...newItems, ...previous]);
     setAncreOpen(false);
     setAncreNote("");
+    if (start) {
+      const [sentItem, ...queuedItems] = newItems;
+      window.open(buildAncreLink(sentItem), "_blank", "noopener,noreferrer");
+      setImports((previous) => [...queuedItems, ...previous]);
+      setToast(
+        queuedItems.length
+          ? `${sentItem.passage.reference} envoyé à Ancre · ${queuedItems.length} autre passage conservé`
+          : `${sentItem.passage.reference} envoyé à Ancre`,
+      );
+      return;
+    }
+    setImports((previous) => [...newItems, ...previous]);
     setToast(
       online
         ? `${newItems.length} passage${newItems.length > 1 ? "s" : ""} préparé${newItems.length > 1 ? "s" : ""} pour Ancre`
         : "Passage conservé hors connexion pour Ancre",
     );
-    if (start) {
-      window.open(buildAncreLink(newItems[0]), "_blank", "noopener,noreferrer");
-    }
   }
 
   function copySelection() {
@@ -2032,6 +2046,7 @@ export default function HomePage() {
                       target="_blank"
                       rel="noreferrer"
                       aria-label={`Ouvrir ${item.passage.reference} dans Ancre`}
+                      onClick={() => markImportSent(item)}
                     >
                       <ExternalLink size={16} />
                     </a>
@@ -2446,6 +2461,7 @@ export default function HomePage() {
                       href={buildAncreLink(item)}
                       target="_blank"
                       rel="noreferrer"
+                      onClick={() => markImportSent(item)}
                     >
                       <span>ANCRE · {item.status === "pending" ? "EN ATTENTE" : "PRÊT"}</span>
                       <strong>{item.passage.reference}</strong>

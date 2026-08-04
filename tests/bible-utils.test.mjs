@@ -6,6 +6,7 @@ import {
   groupConsecutiveNumbers,
   parseReference,
 } from "../lib/bible.ts";
+import { withoutSentImport } from "../lib/ancre.ts";
 
 const catalog = {
   updatedAt: "",
@@ -62,4 +63,14 @@ test("keeps distinct selections distinct while grouping consecutive verses", () 
     formatReference("Jean", 3, [16, 17, 18, 21]),
     "Jean 3:16–18, 21",
   );
+});
+
+test("removes a passage from the Ancre queue once it is sent", () => {
+  const imports = [
+    { externalId: "first", reference: "Jean 3:16" },
+    { externalId: "second", reference: "Psaume 23:1" },
+  ];
+
+  assert.deepEqual(withoutSentImport(imports, "first"), [imports[1]]);
+  assert.deepEqual(withoutSentImport(imports, "missing"), imports);
 });
