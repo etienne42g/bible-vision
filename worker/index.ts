@@ -138,8 +138,10 @@ function apiBibleError(error: unknown) {
   );
 }
 
-async function handleApiBible(request: Request, env: Env) {
-  const apiKey = env.API_BIBLE_KEY || process.env.API_BIBLE_KEY;
+async function handleApiBible(request: Request, env?: Env) {
+  const apiKey =
+    env?.API_BIBLE_KEY ||
+    (typeof process !== "undefined" ? process.env.API_BIBLE_KEY : undefined);
   if (!apiKey) {
     return jsonResponse(
       { error: "La variable serveur API_BIBLE_KEY n’est pas configurée." },
