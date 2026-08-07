@@ -36,6 +36,8 @@ test("server-renders the Bible Vision application shell", async () => {
   assert.match(html, /Mémoriser avec Ancre/);
   assert.match(html, /manifest\.webmanifest/);
   assert.match(html, /og-v2\.png/);
+  assert.match(html, /fumsV3\.min\.js/);
+  assert.match(html, /Bible du Semeur/);
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape/i);
 });
 

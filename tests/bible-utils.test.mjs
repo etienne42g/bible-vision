@@ -7,6 +7,10 @@ import {
   groupConsecutiveNumbers,
   parseReference,
 } from "../lib/bible.ts";
+import {
+  parseApiBibleChapter,
+  parseApiBibleSearchResults,
+} from "../lib/api-bible.ts";
 import { withoutSentImport } from "../lib/ancre.ts";
 import {
   findStrongEntriesForSelection,
@@ -67,6 +71,83 @@ test("keeps distinct selections distinct while grouping consecutive verses", () 
   assert.equal(
     formatReference("Jean", 3, [16, 17, 18, 21]),
     "Jean 3:16–18, 21",
+  );
+});
+
+test("turns API.Bible JSON content into selectable verses", () => {
+  const content = [
+    {
+      name: "para",
+      type: "tag",
+      attrs: { style: "s1" },
+      items: [{ text: "Dieu aime le monde", type: "text" }],
+    },
+    {
+      name: "para",
+      type: "tag",
+      items: [
+        {
+          name: "verse",
+          type: "tag",
+          attrs: { number: "16", sid: "JHN 3:16" },
+          items: [{ text: "16", type: "text" }],
+        },
+        {
+          text: "Car Dieu a tant aimé le monde ",
+          type: "text",
+          attrs: { verseId: "JHN.3.16", verseOrgIds: ["JHN.3.16"] },
+        },
+        {
+          name: "char",
+          type: "tag",
+          items: [
+            {
+              text: "qu’il a donné son Fils unique.",
+              type: "text",
+              attrs: { verseId: "JHN.3.16" },
+            },
+          ],
+        },
+        {
+          name: "verse",
+          type: "tag",
+          attrs: { number: "17", sid: "JHN 3:17" },
+          items: [{ text: "17", type: "text" }],
+        },
+        {
+          text: "Dieu n’a pas envoyé son Fils pour condamner le monde.",
+          type: "text",
+          attrs: { verseId: "JHN.3.17" },
+        },
+      ],
+    },
+  ];
+
+  const verses = parseApiBibleChapter(content);
+  assert.equal(verses[15], "Car Dieu a tant aimé le monde qu’il a donné son Fils unique.");
+  assert.equal(verses[16], "Dieu n’a pas envoyé son Fils pour condamner le monde.");
+});
+
+test("normalizes API.Bible search results", () => {
+  assert.deepEqual(
+    parseApiBibleSearchResults([
+      {
+        id: "JHN.3.16",
+        orgId: "JHN.3.16",
+        bookId: "JHN",
+        chapterId: "JHN.3",
+        text: "  Car Dieu   a aimé. ",
+        reference: "Jean 3:16",
+      },
+    ]),
+    [
+      {
+        bookCode: "JHN",
+        chapter: 3,
+        verse: 16,
+        text: "Car Dieu a aimé.",
+      },
+    ],
   );
 });
 

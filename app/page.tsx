@@ -54,8 +54,10 @@ import {
   groupConsecutiveNumbers,
   loadBible,
   loadBibleCatalog,
+  mergeBibleData,
   normalizeBibleText,
   parseReference,
+  searchApiBible,
   searchBible,
 } from "../lib/bible";
 import {
@@ -129,7 +131,7 @@ type AncreImport = {
     verseStart: number;
     verseEnd: number;
     reference: string;
-    translationId: "fra_lsg" | "fra_jnd";
+    translationId: "fra_lsg" | "fra_jnd" | "api_bible_bds";
     translationName: string;
     corpusSha256: string;
     language: "fr";
@@ -227,6 +229,20 @@ const fallbackCatalog: BibleCatalog = {
       licenseUrl: "https://ebible.org/bible/details.php?id=frajnd",
       license: "Domaine public",
       offline: true,
+      sha256: "",
+      importedAt: "",
+    },
+    {
+      id: "BDS",
+      translationId: "api_bible_bds",
+      name: "La Bible du Semeur",
+      abbreviation: "BDS",
+      language: "fr",
+      source: "Biblica via API.Bible",
+      sourceUrl: "https://www.biblica.com/bible/bds/",
+      licenseUrl: "https://www.biblica.com/permissions/",
+      license: "© Biblica, Inc. · usage non commercial",
+      offline: false,
       sha256: "",
       importedAt: "",
     },
@@ -335,6 +351,14 @@ function formatBytes(value: number) {
   return `${(value / 1024 / 1024).toFixed(value > 10 * 1024 * 1024 ? 0 : 1)} Mo`;
 }
 
+function reportFumsView(token?: string) {
+  if (!token || typeof window === "undefined") return;
+  const browserWindow = window as typeof window & {
+    fums?: (...args: unknown[]) => void;
+  };
+  browserWindow.fums?.("trackView", token);
+}
+
 export default function HomePage() {
   const [activeView, setActiveView] = useState<View>("read");
   const [catalog, setCatalog] = useState<BibleCatalog>(fallbackCatalog);
@@ -377,6 +401,8 @@ export default function HomePage() {
   const [referenceInput, setReferenceInput] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [searchScope, setSearchScope] = useState<SearchScope>("all");
+  const [apiSearchResults, setApiSearchResults] = useState<SearchResult[]>([]);
+  const [apiSearchLoading, setApiSearchLoading] = useState(false);
   const [libraryFilter, setLibraryFilter] = useState<LibraryFilter>("all");
   const [noteOpen, setNoteOpen] = useState(false);
   const [noteTitle, setNoteTitle] = useState("");
@@ -494,17 +520,31 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
-    if (bibles[translation]?.books?.[bookCode]) return;
+    if (getChapterVerses(bibles[translation] ?? null, bookCode, chapter).length) {
+      return;
+    }
     let cancelled = false;
     queueMicrotask(() => {
       if (!cancelled) setLoadingBible(true);
     });
-    loadBible(translation)
+    loadBible(translation, bookCode, chapter)
       .then((bible) => {
-        if (!cancelled) setBibles((previous) => ({ ...previous, [translation]: bible }));
+        if (!cancelled) {
+          setBibles((previous) => ({
+            ...previous,
+            [translation]: mergeBibleData(previous[translation], bible),
+          }));
+          reportFumsView(bible.fumsToken);
+        }
       })
-      .catch(() => {
-        if (!cancelled) setToast(`La traduction ${translation} est indisponible.`);
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setToast(
+            error instanceof Error
+              ? error.message
+              : `La traduction ${translation} est indisponible.`,
+          );
+        }
       })
       .finally(() => {
         if (!cancelled) setLoadingBible(false);
@@ -512,7 +552,7 @@ export default function HomePage() {
     return () => {
       cancelled = true;
     };
-  }, [bibles, bookCode, translation]);
+  }, [bibles, bookCode, chapter, translation]);
 
   useEffect(() => {
     if (!compare || bibles[comparisonTranslation]) return;
@@ -530,6 +570,47 @@ export default function HomePage() {
       cancelled = true;
     };
   }, [bibles, compare, comparisonTranslation]);
+
+  useEffect(() => {
+    if (
+      translation !== "BDS" ||
+      searchScope === "notes" ||
+      searchTerm.trim().length < 2 ||
+      parseReference(searchTerm, catalog)
+    ) {
+      queueMicrotask(() => {
+        setApiSearchResults([]);
+        setApiSearchLoading(false);
+      });
+      return;
+    }
+
+    let cancelled = false;
+    const timeout = window.setTimeout(() => {
+      setApiSearchLoading(true);
+      searchApiBible(catalog, searchTerm, 100)
+        .then(({ results, fumsToken }) => {
+          if (cancelled) return;
+          setApiSearchResults(results);
+          reportFumsView(fumsToken);
+        })
+        .catch((error: unknown) => {
+          if (cancelled) return;
+          setApiSearchResults([]);
+          setToast(
+            error instanceof Error ? error.message : "La recherche BDS est indisponible.",
+          );
+        })
+        .finally(() => {
+          if (!cancelled) setApiSearchLoading(false);
+        });
+    }, 350);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+    };
+  }, [catalog, searchScope, searchTerm, translation]);
 
   useEffect(() => {
     let cancelled = false;
@@ -957,7 +1038,11 @@ export default function HomePage() {
           reference,
           translationId:
             currentBible?.metadata.translationId ??
-            (translation === "LSG" ? "fra_lsg" : "fra_jnd"),
+            (translation === "LSG"
+              ? "fra_lsg"
+              : translation === "DARBY"
+                ? "fra_jnd"
+                : "api_bible_bds"),
           translationName: currentBible?.metadata.name ?? translation,
           corpusSha256: currentBible?.metadata.sha256 ?? "",
           language: "fr",
@@ -1227,16 +1312,21 @@ export default function HomePage() {
     if (!searchTerm.trim() || parsedSearchReference || searchScope === "notes") {
       return [] as SearchResult[];
     }
-    return searchBible(currentBible ?? fallbackBible, catalog, searchTerm, 100).filter(
-      (result) =>
-        searchScope === "all" || result.book.testament === searchScope,
+    const results =
+      translation === "BDS"
+        ? apiSearchResults
+        : searchBible(currentBible ?? fallbackBible, catalog, searchTerm, 100);
+    return results.filter(
+      (result) => searchScope === "all" || result.book.testament === searchScope,
     );
   }, [
+    apiSearchResults,
     catalog,
     currentBible,
     parsedSearchReference,
     searchScope,
     searchTerm,
+    translation,
   ]);
   const noteSearchResults = useMemo(() => {
     if (searchScope !== "notes" || !searchTerm.trim()) return [];
@@ -1658,7 +1748,7 @@ export default function HomePage() {
                     <p>
                       {loadingBible
                         ? "Chargement du texte…"
-                        : `${verses.length} versets · lecture hors connexion disponible`}
+                        : `${verses.length} versets · ${currentBible?.metadata.offline ? "lecture hors connexion disponible" : "lecture en ligne via API.Bible"}`}
                     </p>
                   </div>
                   <button
@@ -1702,6 +1792,9 @@ export default function HomePage() {
                     Source & licence <ExternalLink size={12} />
                   </a>
                 </div>
+                {translation === "BDS" && currentBible?.copyright && (
+                  <p className="scripture-copyright">{currentBible.copyright}</p>
+                )}
               </div>
 
               <article
@@ -1954,9 +2047,9 @@ export default function HomePage() {
                 searchScope !== "notes" &&
                 searchTerm && (
                   <p className="result-count">
-                    {searchResults.length} résultat
-                    {searchResults.length > 1 ? "s" : ""}
-                    {searchResults.length === 100 ? " parmi les premiers trouvés" : ""}
+                    {apiSearchLoading
+                      ? "Recherche dans la Bible du Semeur…"
+                      : `${searchResults.length} résultat${searchResults.length > 1 ? "s" : ""}${searchResults.length === 100 ? " parmi les premiers trouvés" : ""}`}
                   </p>
                 )}
               {searchResults.map((result) => (
@@ -2032,8 +2125,7 @@ export default function HomePage() {
                 <span>TRADUCTIONS</span>
                 <h2>Comparer un passage</h2>
                 <p>
-                  Placez Louis Segond 1910 et Darby côte à côte pour observer chaque
-                  nuance.
+                  Placez deux traductions côte à côte pour observer chaque nuance.
                 </p>
                 <button
                   onClick={() => {
@@ -2051,8 +2143,8 @@ export default function HomePage() {
                 <span>SOURCES</span>
                 <h2>Des textes vérifiables</h2>
                 <p>
-                  Les deux corpus embarqués sont attribués et déclarés dans le domaine
-                  public par leurs distributeurs.
+                  Les corpus hors connexion sont du domaine public et la Bible du
+                  Semeur est fournie en ligne par Biblica via API.Bible.
                 </p>
                 <button onClick={() => setActiveView("settings")}>
                   Voir les licences <ArrowRight size={16} />
@@ -2798,8 +2890,8 @@ export default function HomePage() {
                 <div>
                   <strong>Traductions et licences</strong>
                   <p>
-                    Louis Segond 1910 et Bible J.N. Darby · français · domaine public ·
-                    source eBible.org.
+                    Louis Segond 1910 et Bible J.N. Darby · domaine public et hors
+                    connexion. Bible du Semeur · Biblica via API.Bible · en ligne.
                   </p>
                 </div>
                 <div className="license-actions">

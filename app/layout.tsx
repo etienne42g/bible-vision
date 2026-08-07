@@ -70,7 +70,16 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="fr">
-      <body className={`${dmSans.variable} ${cormorant.variable}`}>{children}</body>
+      <body className={`${dmSans.variable} ${cormorant.variable}`}>
+        {children}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "window.fumsData=window.fumsData||[];window.fums=window.fums||function(){window.fumsData.push(arguments);};",
+          }}
+        />
+        <script async src="https://pkg.api.bible/fumsV3.min.js" />
+      </body>
     </html>
   );
 }

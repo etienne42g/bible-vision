@@ -2642,6 +2642,15 @@ select:disabled {
   text-decoration: none;
 }
 
+.scripture-copyright {
+  max-width: 760px;
+  margin: 14px auto 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.5;
+  text-align: center;
+}
+
 .verse[role="button"] {
   min-height: 44px;
 }

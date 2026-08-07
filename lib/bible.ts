@@ -1,8 +1,8 @@
-export type TranslationId = "LSG" | "DARBY";
+export type TranslationId = "LSG" | "DARBY" | "BDS";
 
 export type TranslationMetadata = {
   id: TranslationId;
-  translationId: "fra_lsg" | "fra_jnd";
+  translationId: "fra_lsg" | "fra_jnd" | "api_bible_bds";
   name: string;
   abbreviation: string;
   language: string;
@@ -33,6 +33,8 @@ export type BibleCatalog = {
 export type BibleData = {
   metadata: TranslationMetadata;
   books: Record<string, string[][]>;
+  copyright?: string;
+  fumsToken?: string;
 };
 
 export type ParsedReference = {
@@ -49,7 +51,44 @@ export type SearchResult = {
   text: string;
 };
 
-const dataCache = new Map<TranslationId, Promise<BibleData>>();
+type ApiBibleChapterResponse = {
+  bookCode: string;
+  chapter: number;
+  verses: string[];
+  copyright: string;
+  fumsToken?: string;
+  bible: {
+    name: string;
+    abbreviation: string;
+  };
+};
+
+type ApiBibleSearchResponse = {
+  results: Array<{
+    bookCode: string;
+    chapter: number;
+    verse: number;
+    text: string;
+  }>;
+  fumsToken?: string;
+};
+
+const dataCache = new Map<string, Promise<BibleData>>();
+
+const bdsMetadata: TranslationMetadata = {
+  id: "BDS",
+  translationId: "api_bible_bds",
+  name: "La Bible du Semeur",
+  abbreviation: "BDS",
+  language: "fr",
+  source: "Biblica via API.Bible",
+  sourceUrl: "https://www.biblica.com/bible/bds/",
+  licenseUrl: "https://www.biblica.com/permissions/",
+  license: "© Biblica, Inc. · usage non commercial",
+  offline: false,
+  sha256: "",
+  importedAt: "",
+};
 
 export function normalizeBibleText(value: string) {
   return value
@@ -67,21 +106,110 @@ export async function loadBibleCatalog(): Promise<BibleCatalog> {
   return response.json() as Promise<BibleCatalog>;
 }
 
-export function loadBible(translation: TranslationId): Promise<BibleData> {
-  const existing = dataCache.get(translation);
+export function loadBible(
+  translation: TranslationId,
+  bookCode?: string,
+  chapter?: number,
+): Promise<BibleData> {
+  const cacheKey =
+    translation === "BDS" ? `${translation}:${bookCode}:${chapter}` : translation;
+  const existing = dataCache.get(cacheKey);
   if (existing) return existing;
 
-  const request = fetch(
-    `/bibles/${translation === "LSG" ? "lsg" : "darby"}.json`,
-  ).then(async (response) => {
-    if (!response.ok) {
-      throw new Error(`La traduction ${translation} est indisponible.`);
-    }
-    return response.json() as Promise<BibleData>;
-  });
+  const request =
+    translation === "BDS"
+      ? loadApiBibleChapter(bookCode, chapter)
+      : fetch(`/bibles/${translation === "LSG" ? "lsg" : "darby"}.json`).then(
+          async (response) => {
+            if (!response.ok) {
+              throw new Error(`La traduction ${translation} est indisponible.`);
+            }
+            return response.json() as Promise<BibleData>;
+          },
+        );
 
-  dataCache.set(translation, request);
-  return request;
+  const cachedRequest = request.catch((error) => {
+    dataCache.delete(cacheKey);
+    throw error;
+  });
+  dataCache.set(cacheKey, cachedRequest);
+  return cachedRequest;
+}
+
+async function loadApiBibleChapter(bookCode?: string, chapter?: number) {
+  if (!bookCode || !chapter) {
+    throw new Error("Le livre et le chapitre sont requis pour la BDS.");
+  }
+
+  const response = await fetch(
+    `/api/bible/bds/chapter?book=${encodeURIComponent(bookCode)}&chapter=${chapter}`,
+  );
+  const payload = (await response.json()) as ApiBibleChapterResponse & {
+    error?: string;
+  };
+  if (!response.ok) {
+    throw new Error(payload.error || "La Bible du Semeur est indisponible.");
+  }
+
+  const chapters: string[][] = [];
+  chapters[chapter - 1] = payload.verses;
+  return {
+    metadata: {
+      ...bdsMetadata,
+      name: payload.bible.name || bdsMetadata.name,
+      abbreviation: payload.bible.abbreviation || bdsMetadata.abbreviation,
+    },
+    books: { [bookCode]: chapters },
+    copyright: payload.copyright,
+    fumsToken: payload.fumsToken,
+  } satisfies BibleData;
+}
+
+export async function searchApiBible(
+  catalog: BibleCatalog,
+  query: string,
+  limit = 100,
+) {
+  const response = await fetch(
+    `/api/bible/bds/search?q=${encodeURIComponent(query)}&limit=${limit}`,
+  );
+  const payload = (await response.json()) as ApiBibleSearchResponse & {
+    error?: string;
+  };
+  if (!response.ok) {
+    throw new Error(payload.error || "La recherche BDS est indisponible.");
+  }
+
+  const books = new Map(catalog.books.map((book) => [book.code, book]));
+  return {
+    results: payload.results.flatMap((result) => {
+      const book = books.get(result.bookCode);
+      return book ? [{ ...result, book }] : [];
+    }),
+    fumsToken: payload.fumsToken,
+  };
+}
+
+export function mergeBibleData(
+  current: BibleData | undefined,
+  incoming: BibleData,
+) {
+  if (!current) return incoming;
+
+  const books = { ...current.books };
+  for (const [bookCode, incomingChapters] of Object.entries(incoming.books)) {
+    const chapters = [...(books[bookCode] ?? [])];
+    incomingChapters.forEach((verses, index) => {
+      if (verses) chapters[index] = verses;
+    });
+    books[bookCode] = chapters;
+  }
+
+  return {
+    ...current,
+    ...incoming,
+    books,
+  };
 }
 
 export function parseReference(
